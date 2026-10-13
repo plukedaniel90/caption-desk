@@ -1,0 +1,27 @@
+const assert=require('node:assert/strict'),C=require('./dist/core.js');let passed=[];
+function test(name,fn){fn();passed.push(name);}
+test('Timestamp roundtrip at boundaries',()=>{for(const n of [0,999,60000,3600000,359999999])assert.equal(C.time(C.stamp(n)),n);});
+test('Invalid timestamp rejection',()=>{for(const v of ['1:2','-01:00.000','00:60:00.000','00:00:60.000','Infinity'])assert.throws(()=>C.time(v));});
+test('SRT roundtrip preserves multilingual text',()=>assert.deepEqual(C.parse(C.serialize(C.demo)).cues,C.demo));
+test('VTT roundtrip preserves multilingual text',()=>assert.deepEqual(C.parse(C.serialize(C.demo,'vtt')).cues,C.demo));
+test('BOM and CRLF supported',()=>assert.equal(C.parse('\uFEFF'+C.serialize(C.demo).replace(/\n/g,'\r\n')).cues.length,16));
+test('VTT cue ids settings and notes handled',()=>{const p=C.parse('WEBVTT\n\nNOTE ignored\n\nintro\n00:00.000 --> 00:01.000 align:start\n<b>Hello</b>');assert.equal(p.cues[0].text,'Hello');assert.equal(p.warnings.length,2);});
+test('Malformed cue is rejected, not silently dropped',()=>assert.throws(()=>C.parse(C.serialize(C.demo)+'\nNot a cue')));
+test('Backward and zero durations rejected',()=>{for(const end of [0,-1])assert.throws(()=>C.validate([{start:0,end,text:'a'}]));});
+test('Demo overlap diagnostic',()=>assert.equal(C.issues(C.demo).filter(x=>x.code==='overlap').length,1));
+test('Fixing overlap removes that flag',()=>{const x=structuredClone(C.demo);x[1].start=4200;assert.equal(C.issues(x).filter(x=>x.code==='overlap').length,0);});
+test('Nested overlap detection',()=>assert.equal(C.issues([{start:0,end:10000,text:'a'},{start:100,end:200,text:'b'},{start:300,end:400,text:'c'}]).filter(x=>x.code==='overlap').length,2));
+test('Shift preserves duration',()=>{const p=C.shift(C.demo,1250);assert.equal(p[1].start,5350);assert.equal(p[1].end-p[1].start,C.demo[1].end-C.demo[1].start);});
+test('Negative shift cannot lose captions',()=>assert.throws(()=>C.shift(C.demo,-1)));
+test('Known clip yields 4 cues and 17.6 seconds',()=>{let p=C.clip(C.demo,12400,30000);assert.equal(p.length,4);assert.equal(p[0].start,0);assert.equal(p.at(-1).end,17600);});
+test('Clip clamps both boundaries and ignores touching cues',()=>{assert.deepEqual(C.clip([{start:1000,end:4000,text:'a'},{start:4000,end:5000,text:'b'}],2000,4000),[{start:0,end:2000,text:'a'}]);});
+test('Invalid clip rejected',()=>assert.throws(()=>C.clip(C.demo,20,10)));
+test('Split preserves time span and words',()=>{const p=C.split(C.demo,0);assert.equal(p.length,17);assert.equal(p[0].start,0);assert.equal(p[1].end,4200);assert.equal(p[0].text+' '+p[1].text,C.demo[0].text);});
+test('Merge uses maximum end with nested cues',()=>assert.equal(C.merge([{start:0,end:9000,text:'a'},{start:100,end:200,text:'b'}],0)[0].end,9000));
+test('Wrap preserves all words including long words',()=>assert.equal(C.wrap('a enormousword b',3).replace(/\n/g,' '),'a enormousword b'));
+test('Blank text, internal blank lines and arrow export blocked',()=>{for(const text of ['','a --> b','a\n\nb'])assert.throws(()=>C.serialize([{start:0,end:1000,text}]));});
+test('Backup valid roundtrip',()=>assert.deepEqual(C.restore(JSON.stringify({schema:'caption-desk/1',title:'D',cues:C.demo})),{title:'D',cues:C.demo}));
+test('Bad backups rejected',()=>{assert.throws(()=>C.restore('{'));assert.throws(()=>C.restore(JSON.stringify({schema:'x',title:'a',cues:C.demo})));assert.throws(()=>C.restore(JSON.stringify({schema:'caption-desk/1',title:'a',cues:[{start:0,end:1,text:{}}]})));});
+test('VTT literal markup safely escaped on export',()=>{const p=[{start:0,end:1000,text:'<literal> & words'}];assert.deepEqual(C.parse(C.serialize(p,'vtt')).cues,p);});
+test('Imported cues sorted with notice',()=>{const p=C.parse('1\n00:00:02,000 --> 00:00:03,000\nb\n\n2\n00:00:00,000 --> 00:00:01,000\na');assert.equal(p.cues[0].text,'a');assert(p.warnings.length);});
+console.log(JSON.stringify({status:'PASS',count:passed.length,tests:passed},null,2));

@@ -1,0 +1,7 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),C=require('./dist/core.js'),B=require('./dist/batch.js');
+const clips=[{name:'Opening / ../ talk',start:12400,end:30000},{name:'తెలుగు',start:31000,end:40000}];
+test('batch rebases multiple formats and preserves source',()=>{const before=JSON.stringify(C.demo),out=B.prepare(C.demo,clips);assert.equal(out.files.length,6);assert.equal(C.parse(out.files[0].text).cues[0].start,0);assert.equal(out.rows[0].count,4);assert.equal(JSON.stringify(C.demo),before);assert.ok(!out.files[0].name.includes('/'));assert.equal(out.rows[1].trimmed,2);});
+test('invalid and empty clips block export',()=>{for(const bad of [[],[{name:'bad',start:1,end:0}],[{name:'empty',start:100000,end:110000}]])assert.throws(()=>B.prepare(C.demo,bad));});
+test('new and legacy backups restore correctly',()=>{const p=C.restore(JSON.stringify({schema:'caption-desk/1',title:'Test',cues:C.demo,clips}));assert.deepEqual(p.clips,clips);assert.equal(C.restore(JSON.stringify({schema:'caption-desk/1',title:'Old',cues:C.demo})).clips,undefined);assert.throws(()=>C.restore(JSON.stringify({schema:'caption-desk/1',title:'Bad',cues:C.demo,clips:[{}]})));});
+test('ZIP CRC32 has known standard result',()=>assert.equal(B.crc32(new TextEncoder().encode('123456789')),0xcbf43926));
+test('write real archive for independent extraction check',()=>fs.writeFileSync('/tmp/caption-batch-test.zip',B.prepare(C.demo,clips).bytes));
